@@ -121,3 +121,67 @@
 (define-read-only (get-share-owner (property-id uint) (share-id uint))
     (map-get? share-ownership { property-id: property-id, share-id: share-id })
 )
+
+
+
+(define-constant err-unauthorized (err u104))
+(define-constant err-insufficient-shares (err u105))
+
+(define-public (transfer-share 
+    (property-id uint) 
+    (share-id uint) 
+    (recipient principal)
+)
+    (let (
+        (current-owner (unwrap! (get-share-owner property-id share-id) err-not-found))
+        (sender-shares (get-shares-owned tx-sender property-id))
+    )
+        (asserts! (is-eq current-owner tx-sender) err-unauthorized)
+        (asserts! (> sender-shares u0) err-insufficient-shares)
+        
+        (try! (nft-transfer? property-share share-id tx-sender recipient))
+        (map-set share-ownership { property-id: property-id, share-id: share-id } recipient)
+        
+        (map-set user-shares 
+            { owner: tx-sender, property-id: property-id }
+            (- sender-shares u1)
+        )
+        (map-set user-shares 
+            { owner: recipient, property-id: property-id }
+            (+ (get-shares-owned recipient property-id) u1)
+        )
+        (ok true)
+    )
+)
+
+
+(define-constant err-invalid-price (err u106))
+
+(define-public (update-rental-price 
+    (property-id uint) 
+    (new-price uint)
+)
+    (let ((property (unwrap! (map-get? properties property-id) err-not-found)))
+        (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+        (asserts! (> new-price u0) err-invalid-price)
+        
+        (map-set properties property-id
+            (merge property { rental-price: new-price })
+        )
+        (ok true)
+    )
+)
+
+(define-public (update-property-name 
+    (property-id uint) 
+    (new-name (string-ascii 64))
+)
+    (let ((property (unwrap! (map-get? properties property-id) err-not-found)))
+        (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+        
+        (map-set properties property-id
+            (merge property { name: new-name })
+        )
+        (ok true)
+    )
+)
